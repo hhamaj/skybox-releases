@@ -1,0 +1,71 @@
+# Flatpak deposu: yayınlanan sürümün .flatpak paketi, GitHub Pages'te (flatpak.hamaj.dev) imzalı bir OSTree deposuna
+# çevrilir; Flatpak kullanıcıları böylece flatpak update ile güncellenir. Depo her sürümde sıfırdan kurulur: Flatpak
+# yalnız değişen nesneleri indirdiği için güncellemeler yine küçük kalır, site de hep tek sürüm kadar yer tutar.
+name: Flatpak
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # İmza anahtarının parmak izi; açık anahtarı flatpak/*.flatpakref ve .flatpakrepo dosyalarında.
+  KEY_ID: 0508617915E2B48115678B7BB90885264D496A0F
+
+jobs:
+  build:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Araçları kur
+        run: sudo apt-get update && sudo apt-get install -y flatpak ostree
+      - name: Paketi indir
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Elle çalıştırınca etiket yoktur; o zaman en son sürüm alınır.
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release download ${TAG:+"$TAG"} --repo "$GITHUB_REPOSITORY" --pattern '*.flatpak' --dir bundle
+          ls bundle
+          if [ "$(ls bundle | wc -l)" -ne 1 ]; then
+            echo "::error::Sürümde tam olarak bir .flatpak paketi olmalı"
+            exit 1
+          fi
+      - name: İmza anahtarını yükle
+        env:
+          PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          printf '%s\n' "$PRIVATE_KEY" | gpg --batch --import
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+      - name: Depoyu kur
+        run: |
+          ostree init --mode=archive-z2 --repo=site
+          flatpak build-import-bundle --gpg-sign="$KEY_ID" site bundle/*.flatpak
+          flatpak build-update-repo --gpg-sign="$KEY_ID" --title="Skybox Launcher" --prune site
+          rm -rf site/tmp
+          cp flatpak/* site/
+          du -sh site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: https://flatpak.hamaj.dev/
+    steps:
+      - uses: actions/deploy-pages@v4

@@ -1,0 +1,10 @@
+[Flatpak Ref]
+Name=dev.hamaj.skybox
+Branch=master
+Title=Skybox Launcher
+Url=https://flatpak.hamaj.dev/
+SuggestRemoteName=skybox
+Homepage=https://skybox.hamaj.dev
+RuntimeRepo=https://dl.flathub.org/repo/flathub.flatpakrepo
+IsRuntime=false
+GPGKey=
