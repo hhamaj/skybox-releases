@@ -1,0 +1,28 @@
+# Bu depo yalnız son sürümü tutar; kodun geçmişi ve eski sürümler gizli kaynak deposunda kalır. Bir sürüm
+# yayınlanınca diğer yayınlanmış sürümler etiketleriyle birlikte silinir. Taslaklara dokunulmaz, böylece
+# hazırlanan bir sürüm yayınlanana dek indirilebilir bir sürüm hep kalır.
+name: Prune
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  prune:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Eski sürümleri sil
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ github.event.release.tag_name }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --exclude-drafts --json tagName -q '.[].tagName' |
+            while read -r tag; do
+              if [ "$tag" != "$KEEP" ]; then
+                gh release delete "$tag" --cleanup-tag --yes --repo "$GITHUB_REPOSITORY"
+              fi
+            done
