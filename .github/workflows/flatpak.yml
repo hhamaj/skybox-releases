@@ -25,6 +25,8 @@ jobs:
   build:
     if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-24.04
+    outputs:
+      artifact: ${{ steps.upload.outputs.artifact_id }}
     steps:
       - uses: actions/checkout@v4
       - name: Araçları kur
@@ -63,7 +65,8 @@ jobs:
           printf '{"version":"%s"}\n' "$VERSION" > site/latest.json
           cat site/latest.json
           du -sh site
-      - uses: actions/upload-pages-artifact@v3
+      - id: upload
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
@@ -74,4 +77,29 @@ jobs:
       name: github-pages
       url: https://flatpak.hamaj.dev/
     steps:
-      - uses: actions/deploy-pages@v4
+      # deploy-pages, Pages'e commit'in SHA'sını sürüm diye verir; sürümler aynı main commit'inden yayınlandığı için
+      # Pages yenisini eskisiyle aynı sanıp eskisini sunmaya devam ediyordu. Her çalışmaya kendi sürümü verilir.
+      - uses: actions/github-script@v7
+        env:
+          ARTIFACT: ${{ needs.build.outputs.artifact }}
+        with:
+          script: |
+            const { owner, repo } = context.repo
+            const { data: deployment } = await github.request('POST /repos/{owner}/{repo}/pages/deployments', {
+              owner, repo,
+              artifact_id: Number(process.env.ARTIFACT),
+              pages_build_version: `${context.sha}-${context.runId}-${context.runAttempt}`,
+              oidc_token: await core.getIDToken(),
+            })
+            for (let attempt = 0; attempt < 120; attempt++) {
+              const { data } = await github.request('GET /repos/{owner}/{repo}/pages/deployments/{id}', { owner, repo, id: deployment.id })
+              core.info(data.status)
+              if (data.status === 'succeed') {
+                return
+              }
+              if (/fail|error|cancel|lost/.test(data.status)) {
+                throw new Error(`Pages deployment ended with ${data.status}`)
+              }
+              await new Promise((resolve) => setTimeout(resolve, 5000))
+            }
+            throw new Error('Pages deployment did not finish in ten minutes')
