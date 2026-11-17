@@ -35,7 +35,9 @@ jobs:
           # Elle çalıştırınca etiket yoktur; o zaman en son sürüm alınır.
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release download ${TAG:+"$TAG"} --repo "$GITHUB_REPOSITORY" --pattern '*.flatpak' --dir bundle
+          TAG=${TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)}
+          echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.flatpak' --dir bundle
           ls bundle
           if [ "$(ls bundle | wc -l)" -ne 1 ]; then
             echo "::error::Sürümde tam olarak bir .flatpak paketi olmalı"
@@ -56,6 +58,10 @@ jobs:
           flatpak build-update-repo --gpg-sign="$KEY_ID" --title="Skybox Launcher" --prune site
           rm -rf site/tmp
           cp flatpak/* site/
+          # Launcher'ın açılışta okuduğu sürüm; depoyla aynı anda yayınlanır, böylece launcher depo yeni sürümü
+          # sunmadan güncelleme istemez.
+          printf '{"version":"%s"}\n' "$VERSION" > site/latest.json
+          cat site/latest.json
           du -sh site
       - uses: actions/upload-pages-artifact@v3
         with:
